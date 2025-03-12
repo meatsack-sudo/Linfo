@@ -2,10 +2,6 @@ import psutil
 
 
 
-def get_per_cpu_frequency():
-    try: 
-        return psutil.cpu_freq(percpu=True)
-    except: return "Unknown"
+temps = psutil.sensors_temperatures()
 
-
-print(get_per_cpu_frequency())
+print(temps)

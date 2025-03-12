@@ -1,17 +1,17 @@
 import sys
-import psutil
-import pyqtgraph as pg
+import os
 import subprocess
+import psutil
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import QTimer, Qt
-import os
+from sensors import sensor
 
 class HWInfoApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Linux HWInfo Prototype")
         self.setGeometry(100, 100, 800, 500)
-        
+
         # Track expanded state for CPU frequency
         self.cpu_expanded = False
 
@@ -27,15 +27,8 @@ class HWInfoApp(QMainWindow):
             }
             os.execvpe("pkexec", ["pkexec", user_python] + sys.argv, env_vars)
 
-        # Initialize statistics tracking
-        self.stats = {
-            "CPU Usage": [],
-            "CPU Frequency": [],
-            "RAM Usage": [],
-            "RAM Frequency": [],
-            "GPU Frequency": [],
-            "GPU Power (Watts)": [],
-        }
+        # Create an instance of our sensor class
+        self.system_stats = sensor()
 
         # Main layout
         layout = QVBoxLayout()
@@ -57,83 +50,33 @@ class HWInfoApp(QMainWindow):
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)  # Update every second
 
-    def update_stat(self, key, value):
-        if value == "Unknown" or value is None:
-            return "Unknown"
-        
-        try:
-            value = float(value)
-            self.stats[key].append(value)
-            if len(self.stats[key]) > 50:  # Limit stored values
-                self.stats[key].pop(0)
-            return value
-        except ValueError:
-            return "Unknown"
-
-    def get_cpu_frequency(self):
-        try:
-            overall_freq = int(psutil.cpu_freq().current)
-            per_core_freqs = [f.current for f in psutil.cpu_freq(percpu=True)]
-            return overall_freq, per_core_freqs
-        except:
-            return "Unknown", []
-
-    def get_ram_frequency(self):
-        try:
-            output = subprocess.check_output(["dmidecode", "-t", "17"], text=True, stderr=subprocess.STDOUT)
-            frequencies = []
-            for line in output.split("\n"):
-                if "Configured Clock Speed:" in line or "Speed:" in line:
-                    freq = line.split(":")[-1].strip().split(" ")[0]  # Extract MHz value
-                    if freq.isdigit():
-                        frequencies.append(int(freq))
-            if frequencies:
-                return max(frequencies)  # Return highest detected frequency
-        except:
-            return "Unknown"
-
-        return "Unknown"
-
-    def get_gpu_frequency(self):
-        try:
-            output = subprocess.check_output(["nvidia-smi", "--query-gpu=clocks.gr", "--format=csv,noheader"], text=True)
-            return int(output.strip().split(" ")[0])  # Extract MHz value
-        except:
-            return "Unknown"
-        
-    def get_gpu_power(self):
-        try:
-            output = subprocess.check_output(["nvidia-smi", "--query-gpu=gpu.power.draw.instant", "--format=csv,noheader,nounits"], text=True)
-            return int(float(output.strip()))
- # Extract total wattage of GPU +/- 5 watts
-        except:
-            return "Unknown"
-
     def toggle_cpu_expansion(self, row, column):
+        """
+        Toggle expansion of CPU frequencies (per-core) on double-click 
+        if the clicked row corresponds to "CPU Frequency".
+        """
         item = self.table.item(row, 0)
         if item and item.text() == "CPU Frequency":
             self.cpu_expanded = not self.cpu_expanded  # Toggle expansion state
             self.update_stats()
 
     def update_stats(self):
-        # Update statistics
-        cpu_usage = self.update_stat("CPU Usage", psutil.cpu_percent())
-        cpu_freq, per_core_freqs = self.get_cpu_frequency()
-        overall_cpu_freq = self.update_stat("CPU Frequency", cpu_freq)
-        ram_usage = self.update_stat("RAM Usage", psutil.virtual_memory().percent)
-        ram_freq = self.update_stat("RAM Frequency", self.get_ram_frequency())
-        gpu_freq = self.update_stat("GPU Frequency", self.get_gpu_frequency())
-        gpu_power = self.update_stat("GPU Power (Watts)", self.get_gpu_power())
+        """
+        Called periodically by the timer. Fetch latest sensor data and 
+        update the table rows accordingly.
+        """
+        # Update all stats, capture per-core frequencies
+        per_core_freqs = self.system_stats.update_all()
 
-
-        # Prepare table
-        total_rows = len(self.stats) + (len(per_core_freqs) if self.cpu_expanded else 0)
+        # Prepare the table rows
+        # If CPU is expanded, we need extra rows for each core
+        total_rows = len(self.system_stats.stats) + (len(per_core_freqs) if self.cpu_expanded else 0)
         self.table.setRowCount(total_rows)
-        row = 0
 
-        for key, values in self.stats.items():
-            if key == "CPU Frequency" and self.cpu_expanded:
-                # Insert per-core frequencies
+        row = 0
+        for key, values in self.system_stats.stats.items():
+            # If CPU Frequency is expanded, insert per-core rows
+            if key == "CPU Frequency" and self.cpu_expanded and len(per_core_freqs) > 0:
                 for core_index, freq in enumerate(per_core_freqs):
                     self.table.setItem(row, 0, QTableWidgetItem(f"Core {core_index}"))
                     self.table.setItem(row, 1, QTableWidgetItem(str(freq)))
@@ -142,12 +85,18 @@ class HWInfoApp(QMainWindow):
                     self.table.setItem(row, 4, QTableWidgetItem(str(freq)))
                     row += 1
             else:
-                if values:
+                # For standard metrics, fill out min, max, avg, current
+                if values:  # Make sure there's at least one data point
+                    min_val = str(min(values))
+                    max_val = str(max(values))
+                    avg_val = str(int(sum(values) / len(values)))
+                    cur_val = str(values[-1])
+
                     self.table.setItem(row, 0, QTableWidgetItem(key))
-                    self.table.setItem(row, 1, QTableWidgetItem(str(min(values))))
-                    self.table.setItem(row, 2, QTableWidgetItem(str(max(values))))
-                    self.table.setItem(row, 3, QTableWidgetItem(str(int(sum(values) / len(values)))))
-                    self.table.setItem(row, 4, QTableWidgetItem(str(values[-1])))
+                    self.table.setItem(row, 1, QTableWidgetItem(min_val))
+                    self.table.setItem(row, 2, QTableWidgetItem(max_val))
+                    self.table.setItem(row, 3, QTableWidgetItem(avg_val))
+                    self.table.setItem(row, 4, QTableWidgetItem(cur_val))
                     row += 1
 
 if __name__ == "__main__":
