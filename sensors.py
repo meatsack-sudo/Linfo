@@ -15,20 +15,35 @@ class sensor:
             "GPU Temperature (C)": []
         }
 
-    def update_stats(self, key, value):
-
-        if value == "Unknown" or value is None:
-            return "Unknown"
+def update_stats(self, key, value):
+    if value == "Unknown" or value is None:
+        return "Unknown"
+    
+    try:
+        value = float(value)
+        self.stats[key].append(value)
         
-        try:
-            value = float(value)
-            self.stats[key].append(value)
-            #Limit function to restrict how many stats we save
-            if len(self.stats[key]) > 50:
+        # When the list exceeds 50 values, try to preserve the min and max
+        if len(self.stats[key]) > 50:
+            current_min = min(self.stats[key])
+            current_max = max(self.stats[key])
+            
+            removed = False
+            # Try to remove the first element that isn't the min or max
+            for i in range(len(self.stats[key])):
+                if self.stats[key][i] != current_min and self.stats[key][i] != current_max:
+                    self.stats[key].pop(i)
+                    removed = True
+                    break
+                    
+            # if every element is min or max, remove the first one
+            if not removed:
                 self.stats[key].pop(0)
-            return value
-        except ValueError:
-            return "Unknown"
+                
+        return value
+    except ValueError:
+        return "Unknown"
+
         
     def get_cpu_frequency(self):
         """
