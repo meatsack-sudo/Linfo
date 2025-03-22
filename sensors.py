@@ -21,6 +21,8 @@ class sensor:
         
         try:
             value = float(value)
+            if key not in self.stats:
+                self.stats[key] = []            
             self.stats[key].append(value)
             
             # When the list exceeds 50 values, try to preserve the min and max
@@ -151,6 +153,10 @@ class sensor:
         # CPU Frequency
         cpu_freq, per_core_freqs = self.get_cpu_frequency()
         self.update_stats("CPU Frequency", cpu_freq)
+
+        # Update per-core frequency history:
+        for i, freq in enumerate(per_core_freqs):
+            self.update_stats(f"Core {i} Frequency", freq)
 
         # CPU Temperature
         self.update_stats("CPU Temperature (C)", self.get_cpu_temperature())

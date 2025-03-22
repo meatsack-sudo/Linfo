@@ -2,7 +2,7 @@ import sys
 import os
 import subprocess
 import psutil
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QToolButton, QPushButton
 from PyQt6.QtCore import QTimer, Qt
 from sensors import sensor
 
@@ -37,7 +37,6 @@ class HWInfoApp(QMainWindow):
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["Metric", "Min", "Max", "Avg", "Current"])
-        self.table.cellDoubleClicked.connect(self.toggle_cpu_expansion)
         layout.addWidget(self.table)
 
         # Set central widget
@@ -50,54 +49,109 @@ class HWInfoApp(QMainWindow):
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)  # Update every second
 
-    def toggle_cpu_expansion(self, row, column):
+        # #Set default expansion arrow:
+        # self.cpu_expansion_button.setArrowType(Qt.ArrowType.DownArrow)
+    
+
+    def toggle_cpu_expansion(self, checked):
         """
         Toggle expansion of CPU frequencies (per-core) on double-click 
         if the clicked row corresponds to "CPU Frequency".
         """
-        item = self.table.item(row, 0)
-        if item and item.text() == "CPU Frequency":
-            self.cpu_expanded = not self.cpu_expanded  # Toggle expansion state
-            self.update_stats()
+        self.cpu_expanded = checked
+        self.update_stats()
 
     def update_stats(self):
-        """
-        Called periodically by the timer. Fetch latest sensor data and 
-        update the table rows accordingly.
-        """
-        # Update all stats, capture per-core frequencies
-        per_core_freqs = self.system_stats.update_all()
+       
+        self.system_stats.update_all()
 
-        # Prepare the table rows
-        # If CPU is expanded, we need extra rows for each core
-        total_rows = len(self.system_stats.stats) + (len(per_core_freqs) if self.cpu_expanded else 0)
+        # Separate metrics into base vs. per-core
+        base_metrics = []
+        per_core_keys = []
+        for key in self.system_stats.stats:
+            if key.startswith("Core "):
+                per_core_keys.append(key)
+            else:
+                base_metrics.append(key)
+
+        # Sort the per-core keys so they appear in numeric order: Core 0, Core 1, ...
+        # per_core_keys.sort(key=lambda k: int(k.split()[1]))  # "Core 0 Frequency" -> 0
+
+        # Decide how many rows we need. 
+        # For example: all base metrics + per-core keys if expanded.
+        base_count = len(base_metrics)
+        core_count = len(per_core_keys) if self.cpu_expanded else 0
+        total_rows = base_count + core_count
         self.table.setRowCount(total_rows)
 
         row = 0
-        for key, values in self.system_stats.stats.items():
-            # If CPU Frequency is expanded, insert per-core rows
-            if key == "CPU Frequency" and self.cpu_expanded and len(per_core_freqs) > 0:
-                for core_index, freq in enumerate(per_core_freqs):
-                    self.table.setItem(row, 0, QTableWidgetItem(f"Core {core_index}"))
-                    self.table.setItem(row, 1, QTableWidgetItem(str(freq)))
-                    self.table.setItem(row, 2, QTableWidgetItem(str(freq)))
-                    self.table.setItem(row, 3, QTableWidgetItem(str(freq)))
-                    self.table.setItem(row, 4, QTableWidgetItem(str(freq)))
-                    row += 1
-            else:
-                # For standard metrics, fill out min, max, avg, current
-                if values:  # Make sure there's at least one data point
-                    min_val = str(min(values))
-                    max_val = str(max(values))
-                    avg_val = str(int(sum(values) / len(values)))
-                    cur_val = str(values[-1])
+        for key in base_metrics:
+            # Grab the list of values for this metric
+            values = self.system_stats.stats[key]
+            if not values:
+                continue
 
-                    self.table.setItem(row, 0, QTableWidgetItem(key))
-                    self.table.setItem(row, 1, QTableWidgetItem(min_val))
-                    self.table.setItem(row, 2, QTableWidgetItem(max_val))
-                    self.table.setItem(row, 3, QTableWidgetItem(avg_val))
-                    self.table.setItem(row, 4, QTableWidgetItem(cur_val))
-                    row += 1
+            # Special handling for CPU Frequency
+            if key == "CPU Frequency":
+                # Create arrow button
+                cpu_expansion_arrow = QToolButton()
+                cpu_expansion_arrow.setText("CPU Frequency")
+                cpu_expansion_arrow.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                cpu_expansion_arrow.setCheckable(True)
+                cpu_expansion_arrow.setChecked(self.cpu_expanded)
+                cpu_expansion_arrow.toggled.connect(self.toggle_cpu_expansion)
+
+                # Arrow direction
+                if self.cpu_expanded:
+                    cpu_expansion_arrow.setArrowType(Qt.ArrowType.UpArrow)
+                else:
+                    cpu_expansion_arrow.setArrowType(Qt.ArrowType.DownArrow)
+
+                # Place the arrow button in column 0
+                self.table.setCellWidget(row, 0, cpu_expansion_arrow)
+
+                # Fill columns 1-4 with min, max, avg, current
+                min_val = str(min(values))
+                max_val = str(max(values))
+                avg_val = str(int(sum(values) / len(values)))
+                cur_val = str(values[-1])
+                self.table.setItem(row, 1, QTableWidgetItem(min_val))
+                self.table.setItem(row, 2, QTableWidgetItem(max_val))
+                self.table.setItem(row, 3, QTableWidgetItem(avg_val))
+                self.table.setItem(row, 4, QTableWidgetItem(cur_val))
+                row += 1
+
+                # If expanded, immediately insert per-core rows
+                if self.cpu_expanded:
+                    for core_key in per_core_keys:
+                        core_values = self.system_stats.stats[core_key]
+                        if not core_values:
+                            continue
+                        core_min = str(min(core_values))
+                        core_max = str(max(core_values))
+                        core_avg = str(int(sum(core_values) / len(core_values)))
+                        core_cur = str(core_values[-1])
+
+                        self.table.setItem(row, 0, QTableWidgetItem(core_key))
+                        self.table.setItem(row, 1, QTableWidgetItem(core_min))
+                        self.table.setItem(row, 2, QTableWidgetItem(core_max))
+                        self.table.setItem(row, 3, QTableWidgetItem(core_avg))
+                        self.table.setItem(row, 4, QTableWidgetItem(core_cur))
+                        row += 1
+
+            else:
+                # For other base metrics
+                min_val = str(min(values))
+                max_val = str(max(values))
+                avg_val = str(int(sum(values) / len(values)))
+                cur_val = str(values[-1])
+
+                self.table.setItem(row, 0, QTableWidgetItem(key))
+                self.table.setItem(row, 1, QTableWidgetItem(min_val))
+                self.table.setItem(row, 2, QTableWidgetItem(max_val))
+                self.table.setItem(row, 3, QTableWidgetItem(avg_val))
+                self.table.setItem(row, 4, QTableWidgetItem(cur_val))
+                row += 1
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
