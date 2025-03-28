@@ -7,12 +7,23 @@ class sensor:
         self.stats = {
             "CPU Usage": [],
             "CPU Frequency": [],
+            "CPU Temperature": [],
+            "GPU Temperature": [],
             "RAM Usage": [],
             "RAM Frequency": [],
             "GPU Frequency": [],
-            "GPU Power (Watts)": [],
-            "CPU Temperature (C)": [],
-            "GPU Temperature (C)": []
+            "GPU Power": [],
+        }
+
+        self.units = {
+            "CPU Usage": "%",
+            "CPU Frequency": "MHz",
+            "CPU Temperature": "°C",
+            "GPU Temperature": "°C",
+            "RAM Usage": "%",
+            "RAM Frequency": "MHz",
+            "GPU Frequency": "MHz",
+            "GPU Power": "W",
         }
 
     def update_stats(self, key, value):
@@ -159,7 +170,7 @@ class sensor:
             self.update_stats(f"Core {i} Frequency", freq)
 
         # CPU Temperature
-        self.update_stats("CPU Temperature (C)", self.get_cpu_temperature())
+        self.update_stats("CPU Temperature", self.get_cpu_temperature())
 
         # RAM Usage
         self.update_stats("RAM Usage", psutil.virtual_memory().percent)
@@ -171,10 +182,10 @@ class sensor:
         self.update_stats("GPU Frequency", self.get_gpu_frequency())
 
         # GPU Power
-        self.update_stats("GPU Power (Watts)", self.get_gpu_power())
+        self.update_stats("GPU Power", self.get_gpu_power())
 
         #GPU Temperature
-        self.update_stats("GPU Temperature (C)", self.get_gpu_temperature())
+        self.update_stats("GPU Temperature", self.get_gpu_temperature())
         
         # Return the tuple or list of per-core frequencies if needed by the GUI
         return per_core_freqs
