@@ -2,54 +2,80 @@ import sys
 import os
 import subprocess
 import psutil
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QToolButton
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
+    QToolButton, QSystemTrayIcon, QMenu,
+)
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QIcon, QAction, QCursor
 from sensors import sensor
+from install import resource_path
+from tray_icon import create_tray
 
-class HWInfoApp(QMainWindow):
+
+class LinfoApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Linux HWInfo Prototype")
+        self.setWindowTitle("Linux Linfo Prototype")
+        self.setWindowIcon(QIcon(resource_path("icon.svg")))
         self.setGeometry(100, 100, 800, 500)
 
         # Used to toggle per-core frequency display
         self.cpu_expanded = False
 
-        # Request root access if not already root
+        # If not running as root, re-launch via pkexec
         if os.geteuid() != 0:
             print("Requesting root access via pkexec...")
-            user_python = subprocess.check_output("which python3", shell=True, text=True).strip()
+            binary_path = os.path.abspath(sys.argv[0])
             env_vars = {
-                "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
+                "PATH": os.environ.get("PATH", ""),
                 "DISPLAY": os.environ.get("DISPLAY", ""),
                 "XAUTHORITY": os.environ.get("XAUTHORITY", ""),
-                "PATH": os.environ.get("PATH", "")
+                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", ""),
+                "LANG": os.environ.get("LANG", "C.UTF-8"),
+                "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
             }
-            os.execvpe("pkexec", ["pkexec", user_python] + sys.argv, env_vars)
+            cmd = ["pkexec", "env"]
+            for k, v in env_vars.items():
+                if v:
+                    cmd.append(f"{k}={v}")
+            cmd.append(binary_path)
+            cmd.extend(sys.argv[1:])
+            os.execvp("pkexec", cmd)
 
         # Initialize hardware sensor backend
         self.system_stats = sensor()
 
         # Set up main layout
         layout = QVBoxLayout()
-
-        # Create table widget for stat display
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setColumnWidth(0, 200)
         self.table.setHorizontalHeaderLabels(["Metric", "Min", "Max", "Avg", "Current"])
         layout.addWidget(self.table)
 
-        # Embed layout into main window
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # Set timer for regular stat updates
+        # Refresh stats every second
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
+
+        self.tray = create_tray(self, resource_path("icon.svg"))
+
+    def restore_from_tray(self):
+        self.showNormal()
+        self.activateWindow()
+
+    def quit_app(self):
+        QApplication.instance().quit()
+
+    def closeEvent(self, event):
+        """Minimize to tray on window close"""
+        event.ignore()
+        self.hide()
 
     def toggle_cpu_expansion(self, checked):
         # Callback for expanding/collapsing per-core frequency rows
@@ -177,6 +203,6 @@ class HWInfoApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = HWInfoApp()
+    window = LinfoApp()
     window.show()
     sys.exit(app.exec())
