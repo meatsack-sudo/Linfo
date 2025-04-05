@@ -1,2 +1,3 @@
-/dist/
-/build/
+# Ignore pyinstaller executables and build files
+dist/
+build/
