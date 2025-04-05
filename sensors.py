@@ -1,5 +1,7 @@
 import psutil
 import subprocess
+import platform
+
 
 class sensor:
 # Main class for fetching and tracking our stats
@@ -25,6 +27,12 @@ class sensor:
             "GPU Frequency": "MHz",
             "GPU Power": "W",
         }
+
+        self.component_names = {
+            "CPU": self.get_cpu_name(),
+            "GPU": self.get_gpu_name(),
+}
+
 
     def update_stats(self, key, value):
         if value == "Unknown" or value is None:
@@ -56,6 +64,19 @@ class sensor:
             return value
         except ValueError:
             return "Unknown"
+        
+    def get_cpu_name(self):
+        try:
+            return subprocess.check_output(["lscpu"], text=True).split("Model name:")[1].strip().split("\n")[0]
+        except:
+            return platform.processor()
+
+    def get_gpu_name(self):
+        try:
+            output = subprocess.check_output(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], text=True)
+            return output.strip()
+        except:
+            return "Unknown GPU"
 
         
     def get_cpu_frequency(self):
@@ -98,7 +119,9 @@ class sensor:
         Returns the highest detected frequency or 'Unknown'.
         """
         try:
-            output = subprocess.check_output(["dmidecode", "-t", "17"], text=True, stderr=subprocess.STDOUT)
+            output = subprocess.check_output([
+                "pkexec", "dmidecode", "-t", "17"
+            ], text=True, stderr=subprocess.STDOUT)
             frequencies = []
             for line in output.split("\n"):
                 if "Configured Clock Speed:" in line or "Speed:" in line:

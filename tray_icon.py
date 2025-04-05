@@ -20,6 +20,10 @@ class QtTray:
         self.restore_action.triggered.connect(parent.restore_from_tray)
         self.menu.addAction(self.restore_action)
 
+        self.settings_action = QAction("Settings", parent)
+        self.settings_action.triggered.connect(parent.open_settings)
+        self.menu.addAction(self.settings_action)
+
         self.quit_action = QAction("Quit", parent)
         self.quit_action.triggered.connect(parent.quit_app)
         self.menu.addAction(self.quit_action)
@@ -59,6 +63,10 @@ class AyatanaTray:
         item_restore = Gtk.MenuItem(label='Restore Window')
         item_restore.connect('activate', lambda _: parent.restore_from_tray())
         self.menu.append(item_restore)
+
+        item_settings = Gtk.MenuItem(label='Settings')
+        item_settings.connect('activate', lambda _: parent.open_settings())
+        self.menu.append(item_settings)
 
         item_quit = Gtk.MenuItem(label='Quit')
         item_quit.connect('activate', lambda _: parent.quit_app())
