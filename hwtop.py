@@ -17,7 +17,6 @@ from settings_window import SettingsWindow
 from theme import get_stylesheet
 
 
-
 class LinfoApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -30,13 +29,11 @@ class LinfoApp(QMainWindow):
         theme = self.settings.value("theme", "dark")
         self.setStyleSheet(get_stylesheet(theme))
 
-
         self.component_expanded = {
             "CPU": self.settings.value("cpu_expanded", False, type=bool),
             "GPU": True,  # default expanded
             "RAM": True,
         }
-
 
         # If not running as root, re-launch via pkexec
         if os.geteuid() != 0:
@@ -83,7 +80,6 @@ class LinfoApp(QMainWindow):
         toggle_cpu_action.toggled.connect(lambda checked: self.toggle_component("CPU", checked))
         view_menu.addAction(toggle_cpu_action)
 
-
         # Help Menu
         help_menu = menu_bar.addMenu("Help")
         about_action = QAction("About", self)
@@ -91,8 +87,6 @@ class LinfoApp(QMainWindow):
         help_menu.addAction(about_action)
 
         # Set up main layout
-        #TODO: With implementation of device name sections, our column widths should save what 
-        #      the user sets them to and restore them on next run.
         layout = QVBoxLayout()
         self.table = QTableWidget()
         self.table.verticalHeader().setVisible(False)
@@ -126,7 +120,6 @@ class LinfoApp(QMainWindow):
 
         self.per_core_expanded = self.settings.value("cpu_expanded", False, type=bool)
 
-
     def restore_from_tray(self):
         self.showNormal()
         self.activateWindow()
@@ -143,13 +136,11 @@ class LinfoApp(QMainWindow):
         theme = self.settings.value("theme", "dark")
         self.setStyleSheet(get_stylesheet(theme))
 
-
     def quit_app(self):
         QApplication.instance().quit()
 
     def show_about(self):
         QMessageBox.information(self, "About Linfo", "Linfo\nVersion 1.0\n\nSystem Hardware Monitor GUI built with PyQt6.")
-
 
     def closeEvent(self, event):
         """Minimize to tray on window close"""
@@ -160,19 +151,18 @@ class LinfoApp(QMainWindow):
         # Returns the unit string for a given stat key
         if key.startswith("Core "):
             return "MHz"
+        # This is hacky, but it works for now
+        if "RPM" in key:
+            return "RPM"
         return self.system_stats.units.get(key, "")
 
     def get_colored_item(self, key, value, unit):
         # Returns a table item with unit, bold font, color-coded if needed
         text = f"{value} {unit}"
         item = QTableWidgetItem(text)
-
-        # Bold font for current values
         font = QFont()
         font.setBold(True)
         item.setFont(font)
-
-        # Align to the right and center vertically
         item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Threshold-based color coding
@@ -181,31 +171,27 @@ class LinfoApp(QMainWindow):
                 item.setForeground(QColor("red"))
             elif value > 60:
                 item.setForeground(QColor("orange"))
-
         elif key == "GPU Temperature" and isinstance(value, (int, float)):
             if value > 85:
                 item.setForeground(QColor("red"))
             elif value > 70:
                 item.setForeground(QColor("orange"))
-
         elif key == "CPU Usage" and isinstance(value, (int, float)):
             if value > 90:
                 item.setForeground(QColor("red"))
             elif value > 70:
                 item.setForeground(QColor("orange"))
-
         elif key == "GPU Power" and isinstance(value, (int, float)):
             if value > 110:
                 item.setForeground(QColor("red"))
             elif value > 90:
                 item.setForeground(QColor("orange"))
-
         return item
 
     def update_stats(self):
         self.system_stats.update_all()
 
-        # Group metrics by component
+        # Build component map
         component_map = {
             "CPU": [
                 "CPU Usage",
@@ -215,8 +201,17 @@ class LinfoApp(QMainWindow):
             ],
             "GPU": [
                 "GPU Temperature",
-                "GPU Frequency",
-                "GPU Power"
+                "GPU Core Frequency",
+                "GPU Power",
+                "GPU Memory",
+                "GPU Memory Frequency",
+                "GPU Memory Usage",
+                "GPU Fan Speed",
+                *sorted(
+                    [k for k in self.system_stats.stats if k.startswith("GPU Fan Speed RPM ")],
+                    key=lambda x: int(x.split()[-1])
+                ),
+                "GPU Throttle Temperature",
             ],
             "RAM": [
                 "RAM Usage",
@@ -231,7 +226,7 @@ class LinfoApp(QMainWindow):
             comp_name = self.system_stats.component_names.get(component, component)
             expanded = self.component_expanded.get(component, True)
 
-            # Insert toggle row with component name
+            # Insert a toggle row for the component
             toggle_btn = QToolButton()
             toggle_btn.setText(f"{comp_name} ({component})")
             toggle_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -258,7 +253,7 @@ class LinfoApp(QMainWindow):
                 if not values:
                     continue
 
-                # Handle CPU Frequency and nested per-core expansion
+                # Handle CPU Frequency with per-core expansion separately.
                 if component == "CPU" and key == "CPU Frequency":
                     self.table.insertRow(row)
                     freq_toggle = QToolButton()
@@ -267,8 +262,6 @@ class LinfoApp(QMainWindow):
                     freq_toggle.setCheckable(True)
                     freq_toggle.setChecked(self.per_core_expanded)
                     freq_toggle.setArrowType(Qt.ArrowType.UpArrow if self.per_core_expanded else Qt.ArrowType.DownArrow)
-                    freq_toggle.toggled.connect(self.toggle_per_core)
-
                     self.table.setCellWidget(row, 0, freq_toggle)
                     unit = self.get_unit_for_key(key)
                     for col, val in zip(range(1, 4), [min(values), max(values), int(sum(values) / len(values))]):
@@ -291,10 +284,10 @@ class LinfoApp(QMainWindow):
                                 self.table.setItem(row, col, item)
                             self.table.setItem(row, 4, self.get_colored_item(core_key, core_values[-1], "MHz"))
                             row += 1
-                    continue  # skip re-processing CPU Frequency and cores
+                    continue  # Skip re-processing CPU Frequency and its cores.
 
                 if key.startswith("Core "):
-                    continue  # handled above
+                    continue  # Already handled above.
 
                 self.table.insertRow(row)
                 self.table.setItem(row, 0, QTableWidgetItem(key))
