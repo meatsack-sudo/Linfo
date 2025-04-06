@@ -95,6 +95,7 @@ class LinfoApp(QMainWindow):
         #      the user sets them to and restore them on next run.
         layout = QVBoxLayout()
         self.table = QTableWidget()
+        self.table.verticalHeader().setVisible(False)
         self.table.setColumnCount(5)
         self.table.setColumnWidth(0, 200)
         self.table.setHorizontalHeaderLabels(["Metric", "Min", "Max", "Avg", "Current"])
